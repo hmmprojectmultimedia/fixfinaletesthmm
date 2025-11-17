@@ -93,7 +93,9 @@
                         <div class="style-card bg-gray-800 p-4 rounded-lg border-2 border-gray-700 cursor-pointer text-center" data-style="quick-insight">
                             <h3 class="font-semibold text-sm">Quick Insight</h3>
                         </div>
-                         <!-- Runway Mode dan Editorial Shots dihapus karena biasanya melibatkan model --></div>
+                         
+
+</div>
                 </section>
 
                 <section id="external-tools" class="mt-8">
@@ -220,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadPromptsBtn: document.getElementById('download-prompts-btn'),
     };
 
-    const API_KEY = 'AIzaSyDHRqIdIoMd-jbiQRBjR2stPuxxWMyCP5E'; // Harap masukkan API key Anda di sini jika diperlukan
+    const API_KEY = ""; // Harap masukkan API key Anda di sini jika diperlukan
     const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
     const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${API_KEY}`;
     const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${API_KEY}`;
@@ -399,20 +401,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const apiCall = async (url, payload) => {
-        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const responseText = await response.text();
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (error) {
-            console.error("Gagal mem-parsing JSON:", responseText);
-            throw new Error("Respons API tidak valid.");
+        // Implementasi retry dengan exponential backoff sederhana
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const responseText = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (error) {
+                    console.error("Gagal mem-parsing JSON:", responseText);
+                    throw new Error("Respons API tidak valid.");
+                }
+                if (!response.ok) {
+                    // Cek jika error 400, yang bisa berarti payload salah
+                    if (response.status === 400 && attempt === maxRetries - 1) {
+                         throw new Error(`API Error 400: ${data?.error?.message || 'Payload tidak valid.'}`);
+                    }
+                    console.error(`API Error ${response.status} attempt ${attempt + 1}:`, data);
+                    throw new Error(`API Error ${response.status}: ${data?.error?.message || 'Unknown error'}`);
+                }
+                return data;
+            } catch (error) {
+                if (attempt === maxRetries - 1) throw error; 
+                await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
+            }
         }
-        if (!response.ok) {
-            console.error("API Error Response:", data);
-            throw new Error(`API Error ${response.status}: ${data?.error?.message || 'Unknown error'}`);
-        }
-        return data;
+        throw new Error("Gagal menghubungkan ke API setelah beberapa percobaan.");
     };
     
     const getCreativePlan = async () => {
@@ -542,8 +558,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { 
                         responseModalities: ['IMAGE'],
-                        aspectRatio: "PORTRAIT_9_16", 
-                        quality: "hd" 
+                        // PERBAIKAN: Parameter aspectRatio dan quality dihapus karena menyebabkan Error 400 pada model gemini-2.5-flash-image-preview
+                        // aspectRatio: "PORTRAIT_9_16", 
+                        // quality: "hd" 
                     }
                 };
                 const parts = payload.contents[0].parts;
@@ -573,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error(`Gagal membuat gambar ${index} percobaan ${attempt}/${maxRetries}:`, error);
                 
                 if (attempt === maxRetries) {
-                    showToast(`Gagal total membuat gambar ${index}.`, true);
+                    showToast(`Gagal total membuat gambar ${index}. Cek API Key & batasan domain (jika di GitHub Pages).`, true);
                     return { base64: null, success: false, error: `Gagal total membuat gambar ${index}.`, label: `Adegan ${index}` };
                 }
                 
@@ -636,7 +653,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const sampleRate = parseInt(audioPart.inlineData.mimeType.match(/rate=(\d+)/)[1], 10);
                 const pcmData = base64ToArrayBuffer(audioPart.inlineData.data);
                 const wavBlob = pcmToWav(new Int16Array(pcmData), 1, sampleRate);
-                const audioUrl = URL.createObjectURL(wavBlob);
                 generatedContent.audio = { blob: wavBlob };
                 dom.audioPlayer.src = audioUrl;
                 dom.audioPlayerControls.classList.remove('hidden');
@@ -748,6 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const writeString = (v, o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
         const blockAlign = numChannels * 2;
         writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + pcmData.byteLength, true);
         view.setUint32(4, 36 + pcmData.byteLength, true);
         writeString(view, 8, 'WAVE');
         writeString(view, 12, 'fmt ');
