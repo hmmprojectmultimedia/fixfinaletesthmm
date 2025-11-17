@@ -222,7 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadPromptsBtn: document.getElementById('download-prompts-btn'),
     };
 
-    const API_KEY = 'AIzaSyDHRqIdIoMd-jbiQRBjR2stPuxxWMyCP5E'; // Harap masukkan API key Anda di sini jika diperlukan
+    // Kunci API dimasukkan sesuai permintaan pengguna.
+    const API_KEY = "AIzaSyDHRqIdIoMd-jbiQRBjR2stPuxxWMyCP5E"; 
     const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${API_KEY}`;
     const IMAGE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${API_KEY}`;
     const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${API_KEY}`;
@@ -558,9 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { 
                         responseModalities: ['IMAGE'],
-                        // PERBAIKAN: Parameter aspectRatio dan quality dihapus karena menyebabkan Error 400 pada model gemini-2.5-flash-image-preview
-                        // aspectRatio: "PORTRAIT_9_16", 
-                        // quality: "hd" 
+                        // PERBAIKAN: Parameter aspectRatio dan quality dihapus karena menyebabkan Error 400
                     }
                 };
                 const parts = payload.contents[0].parts;
@@ -650,9 +649,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await apiCall(TTS_API_URL, payload);
             const audioPart = result?.candidates?.[0]?.content?.parts?.[0];
             if (audioPart?.inlineData?.data) {
-                const sampleRate = parseInt(audioPart.inlineData.mimeType.match(/rate=(\d+)/)[1], 10);
+                // Konversi Base64 ke ArrayBuffer
                 const pcmData = base64ToArrayBuffer(audioPart.inlineData.data);
+                
+                // Ekstrak Sample Rate dari MIME Type
+                const mimeTypeMatch = audioPart.inlineData.mimeType.match(/rate=(\d+)/);
+                const sampleRate = mimeTypeMatch ? parseInt(mimeTypeMatch[1], 10) : 16000; // Default ke 16000 jika gagal
+                
+                // Konversi PCM ke WAV Blob
                 const wavBlob = pcmToWav(new Int16Array(pcmData), 1, sampleRate);
+                const audioUrl = URL.createObjectURL(wavBlob); // Buat URL objek untuk AudioPlayer
+                
                 generatedContent.audio = { blob: wavBlob };
                 dom.audioPlayer.src = audioUrl;
                 dom.audioPlayerControls.classList.remove('hidden');
@@ -688,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const link = document.createElement('a');
         link.href = URL.createObjectURL(generatedContent.audio.blob);
-        link.download = "audio.wav";
+        link.download = "audio_naskah.wav";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -721,9 +728,9 @@ document.addEventListener('DOMContentLoaded', () => {
         textContent += `Latar Belakang: ${generatedContent.masterScene?.background || 'N/A'}\n\n`;
         
         textContent += `--- NASKAH VIDEO ---\n`;
-        textContent += `${generatedContent.masterScene?.tiktokScript || 'N/A'}\n\n`;
+        textContent += `${dom.generatedScriptEl.value || generatedContent.masterScene?.tiktokScript || 'N/A'}\n\n`; // Ambil naskah yang mungkin sudah diedit
 
-        textContent += `--- PROMPT ADEGAN ---\n`;
+        textContent += `--- PROMPT ADEGAN GENERASI GAMBAR ---\n`;
         generatedContent.shotPrompts.forEach((prompt, i) => {
             textContent += `Adegan ${i + 1}:\n${prompt}\n\n`;
         });
